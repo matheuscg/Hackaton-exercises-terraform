@@ -1,6 +1,6 @@
 # Specify the provider and access details
 provider "aws" {
-  region = "${var.aws_region}"
+  region = var.aws_region
 }
 
 variable "project" {
@@ -14,7 +14,7 @@ data "aws_vpc" "vpc" {
 }
 
 data "aws_subnet_ids" "all" {
-  vpc_id = "${data.aws_vpc.vpc.id}"
+  vpc_id = data.aws_vpc.vpc.id
 
   tags = {
     Tier = "Public"
@@ -23,7 +23,7 @@ data "aws_subnet_ids" "all" {
 
 data "aws_subnet" "public" {
   for_each = data.aws_subnet_ids.all.ids
-  id = "${each.value}"
+  id       = each.value
 }
 
 resource "random_shuffle" "random_subnet" {
@@ -56,15 +56,28 @@ resource "aws_elb" "web" {
   instances = aws_instance.web.*.id
 }
 
+resource "aws_sqs_queue" "terraform_queue" {
+  name = "${format("fila-criada-%d", count.index)}"
+  delay_seconds             = 90
+  max_message_size          = 2048
+  message_retention_seconds = 86400
+  receive_wait_time_seconds = 10
+  
+  count = 5
+  tags = {
+    Name = "${format("fila-criada-%d", count.index)}"
+  }
+}
+
 resource "aws_instance" "web" {
   instance_type = "t2.micro"
-  ami           = "${lookup(var.aws_amis, var.aws_region)}"
+  ami           = lookup(var.aws_amis, var.aws_region)
 
   count = 2
 
-  subnet_id              = "${random_shuffle.random_subnet.result[0]}"
+  subnet_id              = random_shuffle.random_subnet.result[0]
   vpc_security_group_ids = ["${aws_security_group.allow-ssh.id}"]
-  key_name               = "${var.KEY_NAME}"
+  key_name               = var.KEY_NAME
 
   provisioner "file" {
     source      = "script.sh"
@@ -79,9 +92,9 @@ resource "aws_instance" "web" {
   }
 
   connection {
-    user        = "${var.INSTANCE_USERNAME}"
-    private_key = "${file("${var.PATH_TO_KEY}")}"
-    host = "${self.public_dns}"
+    user        = var.INSTANCE_USERNAME
+    private_key = file("${var.PATH_TO_KEY}")
+    host        = self.public_dns
   }
 
   tags = {
